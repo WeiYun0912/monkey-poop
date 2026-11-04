@@ -78,6 +78,18 @@
   font-size: 18px;
   animation: pulse 0.3s infinite;
 }
+.buffs {
+  display: flex;
+  gap: 6px;
+}
+.buffs span {
+  background: #fff;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
 .toast.danger {
   background: #e74c3c;
   color: #fff;

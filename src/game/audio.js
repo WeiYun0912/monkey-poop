@@ -130,6 +130,28 @@ export function playRocket() {
   tone('sawtooth', 90, 500, 0.6, 0.12)
 }
 
+export function playPowerup() {
+  ;[392, 523, 659, 784].forEach((f, i) => tone('triangle', f, f * 1.5, 0.15, 0.15, i * 0.05))
+}
+
+export function playBomb() {
+  const c = ac()
+  const t = c.currentTime
+  const src = c.createBufferSource()
+  src.buffer = noiseBuffer(c)
+  const lp = c.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.setValueAtTime(1200, t)
+  lp.frequency.exponentialRampToValueAtTime(80, t + 0.8)
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.8, t)
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1)
+  src.connect(lp).connect(g).connect(c.destination)
+  src.start(t)
+  src.stop(t + 1.1)
+  tone('sine', 120, 30, 0.6, 0.4)
+}
+
 export function playFail() {
   tone('square', 400, 90, 0.7, 0.15)
 }

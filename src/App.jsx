@@ -5,7 +5,7 @@ import './App.css'
 export default function App() {
   const canvasRef = useRef(null)
   const gameRef = useRef(null)
-  const [s, setS] = useState({ phase: 'ready', cm: 0, belly: 100, hold: 0, wind: 0, combo: 0, fever: 0, chiliWarn: 0, rocket: 0, result: null })
+  const [s, setS] = useState({ phase: 'ready', cm: 0, belly: 100, hold: 0, wind: 0, combo: 0, fever: 0, chiliWarn: 0, rocket: 0, magnet: 0, mushroom: 0, net: 0, boom: 0, result: null })
   const [showRules, setShowRules] = useState(true)
   const rulesRef = useRef(true)
   rulesRef.current = showRules
@@ -81,6 +81,14 @@ export default function App() {
         {playing && s.fever > 0 && <div className="toast fever">🔥 便便狂熱！{s.fever.toFixed(1)}s</div>}
         {playing && s.chiliWarn > 0 && <div className="toast danger">🌶️ 肚子咕嚕咕嚕…要點火了，快回塔上！</div>}
         {playing && s.rocket > 0 && <div className="toast rocket">🚀 辣椒火箭！{s.rocket.toFixed(1)}s</div>}
+        {playing && s.boom > 0 && <div className="toast danger">💣 轟！塔頂被炸掉一截</div>}
+        {playing && (s.magnet > 0 || s.mushroom > 0 || s.net > 0) && (
+          <div className="buffs">
+            {s.magnet > 0 && <span>🧲 {s.magnet.toFixed(1)}</span>}
+            {s.mushroom > 0 && <span>🍄 {s.mushroom.toFixed(1)}</span>}
+            {s.net > 0 && <span>🛟 {s.net.toFixed(1)}</span>}
+          </div>
+        )}
       </div>
 
       {playing && (
@@ -100,9 +108,13 @@ export default function App() {
             <li>每擠一段都會消耗<b>肚子</b>；樹枝旁會冒出 🍌，移過去就能吃掉補充（金香蕉補更多）。</li>
             <li><b>連吃 {COMBO_FOR_FEVER} 根香蕉</b>（每根間隔 3.5 秒內）進入 🔥 <b>便便狂熱</b> 5 秒：金色便便、怎麼擠都立得住、肚子不會消耗。</li>
             <li>🌶️ <b>辣椒火箭</b>（常常躲在香蕉旁邊）：吃到後 0.5 秒點火，猴子會<b>往上衝</b>，強力噴射 3 秒把塔<b>一口氣往上頂</b>！但點火時人在盤外就完蛋，吃完要立刻衝回塔上。</li>
+            <li>
+              隨機道具：🧲 <b>磁鐵</b>（6 秒，香蕉自己飛過來）、🍄 <b>巨大菇</b>（5 秒，便便變大）、🛟 <b>救生網</b>（8
+              秒，擠到盤外不算輸）；小心 💣 <b>炸彈</b>，碰到塔頂會被炸掉一截！
+            </li>
             <li>放開後只能<b>憋 2 秒</b>，憋不住就會在當下位置噴一坨。去吃香蕉時要抓好時機！</li>
             <li>堆太陡會<b>坍塌</b>往下滾。越高轉得越快，還會<b>颳側風</b>把便便吹歪。</li>
-            <li>擠到<b>盤子外面</b>就失敗。</li>
+            <li>擠到<b>盤子外面</b>就失敗（有 🛟 救生網時例外）。</li>
             <li>覺得夠高就按<b>「收工」</b>結算；肚子擠空也會自動結算。⭐ {STAR_CM.join(' / ')} cm</li>
           </ul>
           <button onClick={() => setShowRules(false)}>開始！</button>

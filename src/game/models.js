@@ -117,6 +117,66 @@ export function createChili() {
   return g
 }
 
+export function createMagnet() {
+  const g = new THREE.Group()
+  const u = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.08, 10, 20, Math.PI), mat('#e23b3b', { roughness: 0.3 }))
+  u.rotation.z = Math.PI
+  g.add(u)
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.18, 10), mat('#e23b3b', { roughness: 0.3 }))
+    leg.position.set(sx * 0.22, 0.09, 0)
+    g.add(leg)
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.081, 0.081, 0.1, 10), mat('#dddddd', { metalness: 0.8, roughness: 0.2 }))
+    tip.position.set(sx * 0.22, 0.23, 0)
+    g.add(tip)
+  }
+  return g
+}
+
+export function createMushroom() {
+  const g = new THREE.Group()
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat('#e0302a', { roughness: 0.4 }))
+  cap.position.y = 0.05
+  g.add(cap)
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2
+    g.add(ball(0.05, mat('#ffffff'), Math.cos(a) * 0.2, 0.22, Math.sin(a) * 0.2))
+  }
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.25, 12), mat('#f5ead6'))
+  stem.position.y = -0.08
+  g.add(stem)
+  return g
+}
+
+export function createLifebuoy() {
+  const g = new THREE.Group()
+  for (let i = 0; i < 4; i++) {
+    const seg = new THREE.Mesh(
+      new THREE.TorusGeometry(0.25, 0.09, 10, 12, Math.PI / 2),
+      mat(i % 2 ? '#ffffff' : '#ff4d2e', { roughness: 0.4 }),
+    )
+    seg.rotation.z = (i * Math.PI) / 2
+    g.add(seg)
+  }
+  return g
+}
+
+export function createBomb() {
+  const g = new THREE.Group()
+  g.add(ball(0.25, mat('#222222', { roughness: 0.3, metalness: 0.3 })))
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.08, 10), mat('#777777', { metalness: 0.6 }))
+  cap.position.y = 0.26
+  g.add(cap)
+  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.15, 6), mat('#c9a66b'))
+  fuse.position.set(0.03, 0.36, 0)
+  fuse.rotation.z = -0.4
+  g.add(fuse)
+  const spark = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffd23f' }))
+  spark.position.set(0.07, 0.44, 0)
+  g.add(spark)
+  return g
+}
+
 export function createScenery(scene) {
   // 桌子 + 盤子
   const table = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.3, 48), mat('#b07a4a'))

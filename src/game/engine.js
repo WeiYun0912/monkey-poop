@@ -1,6 +1,17 @@
 import * as THREE from 'three'
-import { createMonkey, createBanana, createChili, createScenery, createDish } from './models.js'
+import {
+  createMonkey,
+  createBanana,
+  createChili,
+  createMagnet,
+  createMushroom,
+  createLifebuoy,
+  createBomb,
+  createScenery,
+  createDish,
+} from './models.js'
 import * as sfx from './audio.js'
+import { FxPool } from './fx.js'
 
 const DISH_R = 1.7
 const MAX_BLOBS = 5000
@@ -15,8 +26,32 @@ const CHILI_WARN = 0.5 // 吃到辣椒後幾秒開始狂噴
 const CHILI_TIME = 3
 const ROCKET_H = 3 // 辣椒火箭往上衝多高
 const PARTICLES = 400
+const MAGNET_TIME = 6
+const MUSHROOM_TIME = 5
+const NET_TIME = 8
+const BOMB_CUT = 1.2 // 炸彈炸掉塔頂多高
+const isFood = (k) => k === 'banana' || k === 'golden'
+// 道具出現權重：[種類, 權重, 塔至少要多高才出現]
+const ITEM_TABLE = [
+  ['banana', 45, 0],
+  ['golden', 10, 0],
+  ['chili', 18, 0.8],
+  ['magnet', 7, 0],
+  ['mushroom', 7, 0],
+  ['net', 6, 0.8],
+  ['bomb', 7, 1.5],
+]
+const ITEM_MESH = {
+  banana: () => createBanana(false),
+  golden: () => createBanana(true),
+  chili: createChili,
+  magnet: createMagnet,
+  mushroom: createMushroom,
+  net: createLifebuoy,
+  bomb: createBomb,
+}
 const CM_PER_UNIT = 10
-export const STAR_CM = [20, 40, 70]
+export const STAR_CM = [25, 55, 100]
 
 const rnd = (k) => (Math.random() - 0.5) * k
 
@@ -96,6 +131,34 @@ export class Game {
     this.partMesh.frustumCulled = false
     scene.add(this.partMesh)
 
+    // 火箭火焰（疊加發光）與煙霧尾跡
+    this.flame = new FxPool(scene, {
+      max: 300,
+      material: new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+      gravity: 3,
+      drag: 2,
+      colors: [new THREE.Color('#fff3a0'), new THREE.Color('#ff3a00')],
+    })
+    this.smoke = new FxPool(scene, {
+      max: 200,
+      material: new THREE.MeshStandardMaterial({ color: '#9b9b9b', transparent: true, opacity: 0.45, depthWrite: false, roughness: 1 }),
+      gravity: 1.2,
+      drag: 1.5,
+      grow: 3,
+    })
+    this.fireLight = new THREE.PointLight('#ff7a1a', 0, 6)
+    scene.add(this.fireLight)
+
+    // 救生網：盤子外圍的一圈網
+    this.netMesh = new THREE.Mesh(
+      new THREE.TorusGeometry(DISH_R + 0.9, 0.9, 6, 48),
+      new THREE.MeshBasicMaterial({ color: '#7fd3ff', transparent: true, opacity: 0.35, wireframe: true }),
+    )
+    this.netMesh.rotation.x = Math.PI / 2
+    this.netMesh.scale.z = 0.08
+    this.netMesh.visible = false
+    scene.add(this.netMesh)
+
     this.tmpM = new THREE.Matrix4()
     this.tmpQ = new THREE.Quaternion()
     this.tmpC = new THREE.Color()
@@ -135,6 +198,12 @@ export class Game {
     this.lift = 0
     this.parts = []
     this.partMesh.count = 0
+    this.flame.clear()
+    this.smoke.clear()
+    this.magnet = 0
+    this.mushroom = 0
+    this.net = 0
+    this.boom = 0
     this.wind = 0
     this.windTimer = 8
     this.windLeft = 0
@@ -223,7 +292,7 @@ export class Game {
 
   dropBlob(worldX) {
     if (this.blobs.length >= MAX_BLOBS) return
-    const r = 0.19 + Math.random() * 0.04
+    const r = (0.19 + Math.random() * 0.04) * (this.mushroom > 0 ? 1.6 : 1)
     // 世界座標 → 盤子座標（盤子繞 y 軸旋轉）
     const jitter = this.rocket > 0 ? 0.08 : 0.03
     const wx = worldX + (Math.random() - 0.5) * jitter + this.wind * 0.35
@@ -257,6 +326,11 @@ export class Game {
     const { y, supported } = l
     const dist = Math.hypot(x, z)
     const b = { x, z, y, r, born: this.time }
+    if (!supported && dist > DISH_R - r * 0.3 && this.net > 0) {
+      // 救生網接住：不算失敗，便便直接被網子收走
+      this.spawnPart(worldX, 0.1, 0, rnd(2), 1 + Math.random() * 2, rnd(2))
+      return
+    }
     if (!supported && dist > DISH_R - r * 0.3) {
       // 掉出盤子
       this.addBlobInstance(b, this.blobs.length)
@@ -275,10 +349,14 @@ export class Game {
     this.tmpQ.setFromEuler(new THREE.Euler(Math.random(), Math.random(), Math.random()))
     this.tmpM.compose(new THREE.Vector3(b.x, b.y, b.z), this.tmpQ, new THREE.Vector3(b.r, b.r * 0.8, b.r))
     this.blobMesh.setMatrixAt(i, this.tmpM)
-    const l = 0.24 + Math.random() * 0.07
-    if (this.fever > 0) this.tmpC.setHSL(0.13, 0.9, l + 0.25)
-    else if (this.rocket > 0) this.tmpC.setHSL(0.04, 0.6, l + 0.05)
-    else this.tmpC.setHSL(0.07, 0.55, l)
+    if (!b.col) {
+      // 記下顏色，炸彈重建塔時沿用
+      const l = 0.24 + Math.random() * 0.07
+      if (this.fever > 0) b.col = [0.13, 0.9, l + 0.25]
+      else if (this.rocket > 0) b.col = [0.04, 0.6, l + 0.05]
+      else b.col = [0.07, 0.55, l]
+    }
+    this.tmpC.setHSL(...b.col)
     this.blobMesh.setColorAt(i, this.tmpC)
     this.blobMesh.count = i + 1
     this.blobMesh.instanceMatrix.needsUpdate = true
@@ -286,12 +364,13 @@ export class Game {
   }
 
   spawnItem() {
-    const roll = Math.random()
-    // 塔有一點高度後才會出現辣椒
-    const kind = this.top > 0.8 && roll < 0.25 ? 'chili' : roll > 0.85 ? 'golden' : 'banana'
-    const mesh = kind === 'chili' ? createChili() : createBanana(kind === 'golden')
+    // 依權重抽道具；辣椒、救生網、炸彈要塔有一點高度才會出現
+    const table = ITEM_TABLE.filter(([, , minTop]) => this.top >= minTop)
+    let roll = Math.random() * table.reduce((s, [, w]) => s + w, 0)
+    const kind = table.find(([, w]) => (roll -= w) < 0)[0]
+    const mesh = ITEM_MESH[kind]()
     let x, tries = 0
-    const guard = this.bananas.find((b) => b.kind !== 'chili')
+    const guard = this.bananas.find((b) => isFood(b.kind))
     if (kind === 'chili' && guard && Math.random() < 0.5) {
       // 一半機率貼在香蕉旁邊，要從另一側繞過去吃
       x = guard.x + (Math.random() < 0.5 ? -0.55 : 0.55)
@@ -310,6 +389,17 @@ export class Game {
       this.combo = 0
       this.chiliWarn = CHILI_WARN
       sfx.playRumble()
+      return
+    }
+    if (b.kind === 'bomb') {
+      this.explode()
+      return
+    }
+    if (!isFood(b.kind)) {
+      if (b.kind === 'magnet') this.magnet = MAGNET_TIME
+      if (b.kind === 'mushroom') this.mushroom = MUSHROOM_TIME
+      if (b.kind === 'net') this.net = NET_TIME
+      sfx.playPowerup()
       return
     }
     this.belly = Math.min(100, this.belly + (b.golden ? 20 : 8))
@@ -356,6 +446,9 @@ export class Game {
     if (active) {
       this.fever = Math.max(0, this.fever - dt)
       this.rocket = Math.max(0, this.rocket - dt)
+      this.magnet = Math.max(0, this.magnet - dt)
+      this.mushroom = Math.max(0, this.mushroom - dt)
+      this.net = Math.max(0, this.net - dt)
       if (this.chiliWarn > 0) {
         this.chiliWarn -= dt
         if (this.chiliWarn <= 0) {
@@ -430,11 +523,13 @@ export class Game {
       this.bananaTimer -= dt
       if (this.bananaTimer <= 0) {
         this.spawnItem()
-        this.bananaTimer = 2.5 + Math.random() * 1.5
+        this.bananaTimer = 1.8 + Math.random() * 1.2
       }
     }
     for (const b of [...this.bananas]) {
       b.life -= dt
+      // 磁鐵：香蕉自己飛過來
+      if (this.magnet > 0 && isFood(b.kind)) b.x += (this.monkeyX - b.x) * Math.min(1, dt * 3)
       b.mesh.position.set(b.x, this.monkeyBaseY + 0.9 + Math.sin(this.time * 3 + b.x) * 0.1, 0.2)
       b.mesh.rotation.y += dt * 3
       const s = Math.min(1, b.life * 2, (5 - b.life) * 4)
@@ -492,15 +587,34 @@ export class Game {
       const bx = this.monkeyX, by = m.root.position.y, ty = this.lastLandY ?? 0
       for (let i = 0; i < 5; i++) this.spawnPart(bx, by, 0, rnd(1.2), -4 - Math.random() * 3, rnd(1.2))
       for (let i = 0; i < 4; i++) this.spawnPart(bx, ty + 0.2, 0, rnd(3), 2 + Math.random() * 4, rnd(3))
+      // 火焰從屁股往下噴，煙霧拖在後面慢慢飄散
+      for (let i = 0; i < 7; i++)
+        this.flame.spawn(bx + rnd(0.15), by - 0.05, rnd(0.15), rnd(1.2), -3 - Math.random() * 3, rnd(1.2), 0.2 + Math.random() * 0.2, 0.1 + Math.random() * 0.12)
+      for (let i = 0; i < 2; i++)
+        this.smoke.spawn(bx + rnd(0.2), by - 0.2, rnd(0.2) - 0.2, rnd(0.8), -1.5 - Math.random(), rnd(0.8) - 0.3, 1.2 + Math.random() * 0.6, 0.12 + Math.random() * 0.08)
+    } else if (this.chiliWarn > 0 && this.phase !== 'over' && Math.random() < 0.4) {
+      // 快點火了：屁股冒煙
+      const mp = m.root.position
+      this.smoke.spawn(mp.x + rnd(0.1), mp.y, -0.1, rnd(0.5), -0.5, rnd(0.3), 0.8, 0.08)
     }
     this.updateParts(dt)
+    this.flame.update(dt)
+    this.smoke.update(dt)
+    // 救生網：最後 1.5 秒閃爍提醒快沒了
+    this.netMesh.visible = this.net > 0 && this.phase !== 'over' && (this.net > 1.5 || Math.sin(this.time * 20) > 0)
+    this.netMesh.rotation.z += dt * 0.5
+    this.boom = Math.max(0, this.boom - dt)
+    // 火光照亮猴子跟塔
+    const fire = this.rocket > 0 && this.phase !== 'over'
+    this.fireLight.intensity = fire ? 8 + Math.random() * 6 : 0
+    if (fire) this.fireLight.position.set(this.monkeyX, m.root.position.y - 0.4, 0.4)
 
     // 相機跟隨（火箭時往上帶一點）
     const targetCam = Math.max(1.2, this.top * 0.7 + 0.8) + this.lift * 0.9
     this.camY += (targetCam - this.camY) * Math.min(1, dt * 2)
     const portrait = this.camera.aspect < 1
     const dist = (portrait ? 11 : 8) + this.top * 0.6 + this.lift * 0.8
-    const shake = this.rocket > 0 ? 0.15 : this.chiliWarn > 0 ? 0.05 : 0
+    const shake = this.boom > 1 ? 0.5 * (this.boom - 1) * 2 : this.rocket > 0 ? 0.15 : this.chiliWarn > 0 ? 0.05 : 0
     this.camera.position.set((Math.random() - 0.5) * shake, this.camY + 2.2 + (Math.random() - 0.5) * shake, dist)
     this.camera.lookAt(0, this.camY, 0)
     this.sun.position.set(4, this.camY + 10, 6)
@@ -517,6 +631,28 @@ export class Game {
   burst(n) {
     const m = this.monkey.root.position
     for (let i = 0; i < n; i++) this.spawnPart(m.x, m.y, 0, rnd(5), -1 - Math.random() * 5, rnd(5))
+    // 點火瞬間的火球 + 煙圈
+    for (let i = 0; i < 40; i++) this.flame.spawn(m.x, m.y, 0, rnd(6), -Math.random() * 4, rnd(6), 0.3 + Math.random() * 0.2, 0.15 + Math.random() * 0.15)
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2
+      this.smoke.spawn(m.x, m.y - 0.1, 0, Math.cos(a) * 3, -0.5, Math.sin(a) * 3, 1.4, 0.15)
+    }
+  }
+
+  // 炸彈：塔頂炸掉一截
+  explode() {
+    const oldTop = this.top
+    const cut = Math.max(0, oldTop - BOMB_CUT)
+    this.blobs = this.blobs.filter((b) => b.y < cut)
+    this.blobs.forEach((b, i) => this.addBlobInstance(b, i))
+    this.blobMesh.count = this.blobs.length
+    this.top = this.blobs.reduce((t, b) => Math.max(t, b.y + b.r * 0.8), 0)
+    this.lastLandY = this.top
+    for (let i = 0; i < 60; i++) this.spawnPart(rnd(0.6), oldTop - 0.5, rnd(0.6), rnd(8), 1 + Math.random() * 6, rnd(8))
+    for (let i = 0; i < 50; i++) this.flame.spawn(rnd(0.5), oldTop - 0.5, rnd(0.5), rnd(7), rnd(7), rnd(7), 0.3 + Math.random() * 0.3, 0.2 + Math.random() * 0.2)
+    for (let i = 0; i < 25; i++) this.smoke.spawn(rnd(0.8), oldTop - 0.5, rnd(0.8), rnd(3), Math.random() * 2, rnd(3), 1.5, 0.2)
+    this.boom = 1.5 // 前 0.5 秒震動，提示顯示 1.5 秒
+    sfx.playBomb()
   }
 
   updateParts(dt) {
@@ -560,6 +696,10 @@ export class Game {
       fever: this.fever,
       chiliWarn: this.chiliWarn,
       rocket: this.rocket,
+      magnet: this.magnet,
+      mushroom: this.mushroom,
+      net: this.net,
+      boom: this.boom,
       result: this.result,
     })
   }
