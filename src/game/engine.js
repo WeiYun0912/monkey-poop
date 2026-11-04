@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { createMonkey, createBanana, createScenery, createDish } from './models.js'
+import { createMonkey, createBanana, createChili, createScenery, createDish } from './models.js'
 import * as sfx from './audio.js'
 
 const DISH_R = 1.7
@@ -8,8 +8,13 @@ const BLOB_INTERVAL = 0.035 // 秒／顆
 const BELLY_PER_BLOB = 100 / 520
 const HOLD_LIMIT = 2 // 放開後最多憋幾秒
 const MONKEY_X_RANGE = 2.8
+const COMBO_WINDOW = 3.5 // 幾秒內連吃算連擊
+export const COMBO_FOR_FEVER = 4
+const FEVER_TIME = 5
+const CHILI_WARN = 0.5 // 吃到辣椒後幾秒開始狂噴
+const CHILI_TIME = 3
 const CM_PER_UNIT = 10
-export const STAR_CM = [20, 35, 50]
+export const STAR_CM = [20, 40, 70]
 
 export class Game {
   constructor(canvas, onState) {
@@ -106,7 +111,12 @@ export class Game {
     this.top = 0
     for (const b of this.bananas || []) this.scene.remove(b.mesh)
     this.bananas = []
-    this.bananaTimer = 4
+    this.bananaTimer = 2.5
+    this.combo = 0
+    this.lastEat = -99
+    this.fever = 0
+    this.chiliWarn = 0
+    this.diarrhea = 0
     this.wind = 0
     this.windTimer = 8
     this.windLeft = 0
@@ -197,7 +207,7 @@ export class Game {
     if (this.blobs.length >= MAX_BLOBS) return
     const r = 0.19 + Math.random() * 0.04
     // 世界座標 → 盤子座標（盤子繞 y 軸旋轉）
-    const jitter = 0.03
+    const jitter = this.diarrhea > 0 ? 0.3 : 0.03
     const wx = worldX + (Math.random() - 0.5) * jitter + this.wind * 0.35
     const wz = (Math.random() - 0.5) * jitter
     const a = -this.dishAngle
@@ -207,7 +217,9 @@ export class Game {
     let l = this.landingY(x, z, r)
     // 坍塌：周圍落差超過安息角就往低處滾。落點在盤面上移動越快（拉成條）越立得住，原地噴會糊成一攤
     const v = this.spin * Math.hypot(lx, lz)
-    const repose = THREE.MathUtils.lerp(this.repose[0], this.repose[1], THREE.MathUtils.clamp(v / 0.6, 0, 1))
+    let repose = THREE.MathUtils.lerp(this.repose[0], this.repose[1], THREE.MathUtils.clamp(v / 0.6, 0, 1))
+    if (this.fever > 0) repose = this.repose[1] // 狂熱：怎麼擠都立得住
+    if (this.diarrhea > 0) repose = 0.4 // 拉肚子：稀的立不住
     const step = r * 1.5
     for (let iter = 0; iter < this.rollIters && l.supported; iter++) {
       let best = null
@@ -246,21 +258,51 @@ export class Game {
     this.tmpM.compose(new THREE.Vector3(b.x, b.y, b.z), this.tmpQ, new THREE.Vector3(b.r, b.r * 0.8, b.r))
     this.blobMesh.setMatrixAt(i, this.tmpM)
     const l = 0.24 + Math.random() * 0.07
-    this.tmpC.setHSL(0.07, 0.55, l)
+    if (this.fever > 0) this.tmpC.setHSL(0.13, 0.9, l + 0.25)
+    else if (this.diarrhea > 0) this.tmpC.setHSL(0.11, 0.45, l + 0.12)
+    else this.tmpC.setHSL(0.07, 0.55, l)
     this.blobMesh.setColorAt(i, this.tmpC)
     this.blobMesh.count = i + 1
     this.blobMesh.instanceMatrix.needsUpdate = true
     if (this.blobMesh.instanceColor) this.blobMesh.instanceColor.needsUpdate = true
   }
 
-  spawnBanana() {
-    const golden = Math.random() < 0.18
-    const mesh = createBanana(golden)
-    let x
-    do x = (Math.random() * 2 - 1) * (MONKEY_X_RANGE - 0.2)
-    while (Math.abs(x - this.monkeyX) < 1.0)
+  spawnItem() {
+    const roll = Math.random()
+    // 塔有一點高度後才會出現辣椒
+    const kind = this.top > 0.8 && roll < 0.25 ? 'chili' : roll > 0.85 ? 'golden' : 'banana'
+    const mesh = kind === 'chili' ? createChili() : createBanana(kind === 'golden')
+    let x, tries = 0
+    const guard = this.bananas.find((b) => b.kind !== 'chili')
+    if (kind === 'chili' && guard && Math.random() < 0.5) {
+      // 一半機率貼在香蕉旁邊，要從另一側繞過去吃
+      x = guard.x + (Math.random() < 0.5 ? -0.55 : 0.55)
+      if (Math.abs(x) > MONKEY_X_RANGE - 0.1) x = guard.x - Math.sign(x) * 0.55
+    } else {
+      do x = (Math.random() * 2 - 1) * (MONKEY_X_RANGE - 0.2)
+      while (tries++ < 20 && (Math.abs(x - this.monkeyX) < 1.0 || this.bananas.some((b) => Math.abs(b.x - x) < 0.6)))
+    }
     this.scene.add(mesh)
-    this.bananas.push({ mesh, x, life: 5, golden })
+    this.bananas.push({ mesh, x, life: 5, kind, golden: kind === 'golden' })
+  }
+
+  eat(b) {
+    this.chew = 0.5
+    if (b.kind === 'chili') {
+      this.combo = 0
+      this.chiliWarn = CHILI_WARN
+      sfx.playRumble()
+      return
+    }
+    this.belly = Math.min(100, this.belly + (b.golden ? 20 : 8))
+    sfx.playBanana(b.golden)
+    this.combo = this.time - this.lastEat < COMBO_WINDOW ? this.combo + 1 : 1
+    this.lastEat = this.time
+    if (this.combo >= COMBO_FOR_FEVER) {
+      this.combo = 0
+      this.fever = FEVER_TIME
+      sfx.playFever()
+    }
   }
 
   update(dt) {
@@ -280,8 +322,26 @@ export class Game {
     m.root.rotation.z = THREE.MathUtils.clamp((this.monkeyX - prevX) * -3, -0.3, 0.3)
     this.branch.position.set(0, m.root.position.y + 2.0, 0)
 
+    // 狂熱 / 辣椒計時
+    const active = this.phase === 'playing' || this.phase === 'dumping'
+    if (active) {
+      this.fever = Math.max(0, this.fever - dt)
+      this.diarrhea = Math.max(0, this.diarrhea - dt)
+      if (this.chiliWarn > 0) {
+        this.chiliWarn -= dt
+        if (this.chiliWarn <= 0) {
+          this.chiliWarn = 0
+          this.diarrhea = CHILI_TIME
+          this.holdTime = 0
+          sfx.playFart()
+        }
+      }
+    }
+
     let squeezing = false
-    if (this.phase === 'playing') {
+    if (this.phase === 'playing' && this.diarrhea > 0) {
+      squeezing = this.belly > 0 // 拉肚子：不管有沒有按都在噴
+    } else if (this.phase === 'playing') {
       // 憋不住機制
       if (this.input.squeeze && this.belly > 0) {
         this.holdTime = Math.max(0, this.holdTime - dt * 3)
@@ -304,10 +364,11 @@ export class Game {
 
     if (squeezing) {
       this.blobAcc += dt
-      while (this.blobAcc >= BLOB_INTERVAL && this.phase !== 'over') {
-        this.blobAcc -= BLOB_INTERVAL
+      const interval = this.diarrhea > 0 ? BLOB_INTERVAL / 2 : BLOB_INTERVAL
+      while (this.blobAcc >= interval && this.phase !== 'over') {
+        this.blobAcc -= interval
         this.dropBlob(this.monkeyX)
-        this.belly = Math.max(0, this.belly - BELLY_PER_BLOB)
+        if (this.fever <= 0) this.belly = Math.max(0, this.belly - BELLY_PER_BLOB)
       }
       if (this.belly <= 0 && this.phase !== 'over') this.end(true, '肚子清空了！')
     }
@@ -337,8 +398,8 @@ export class Game {
     if (this.phase === 'playing') {
       this.bananaTimer -= dt
       if (this.bananaTimer <= 0) {
-        this.spawnBanana()
-        this.bananaTimer = 6 + Math.random() * 4
+        this.spawnItem()
+        this.bananaTimer = 2.5 + Math.random() * 1.5
       }
     }
     for (const b of [...this.bananas]) {
@@ -348,11 +409,7 @@ export class Game {
       const s = Math.min(1, b.life * 2, (5 - b.life) * 4)
       b.mesh.scale.setScalar(Math.max(0.01, s) * (b.golden ? 1.3 : 1))
       const eaten = this.phase !== 'over' && Math.abs(b.x - this.monkeyX) < 0.4
-      if (eaten) {
-        this.belly = Math.min(100, this.belly + (b.golden ? 35 : 15))
-        sfx.playBanana(b.golden)
-        this.chew = 0.5
-      }
+      if (eaten) this.eat(b)
       if (eaten || b.life <= 0) {
         this.scene.remove(b.mesh)
         this.bananas.splice(this.bananas.indexOf(b), 1)
@@ -360,7 +417,7 @@ export class Game {
     }
 
     // 猴子表情 & 擠壓動作
-    const strain = this.holdTime / HOLD_LIMIT
+    const strain = this.chiliWarn > 0 || this.diarrhea > 0 ? 1 : this.holdTime / HOLD_LIMIT
     const sq = squeezing ? 1 : 0
     m.body.scale.set(1 + sq * 0.04 * Math.sin(this.time * 30), 1 - sq * 0.06, 1)
     m.body.position.x = strain > 0.5 ? Math.sin(this.time * 60) * 0.03 * strain : 0
@@ -372,6 +429,7 @@ export class Game {
     // 便便流
     this.stream.visible = squeezing && this.phase !== 'over'
     if (this.stream.visible) {
+      this.stream.material.color.set(this.fever > 0 ? '#f5c518' : this.diarrhea > 0 ? '#9a6b2f' : '#6b3e1f')
       const from = m.root.position.y
       const to = (this.lastLandY ?? 0) + 0.1
       const h = Math.max(0.05, from - to)
@@ -402,7 +460,8 @@ export class Game {
     this.camY += (targetCam - this.camY) * Math.min(1, dt * 2)
     const portrait = this.camera.aspect < 1
     const dist = (portrait ? 11 : 8) + this.top * 0.6
-    this.camera.position.set(0, this.camY + 2.2, dist)
+    const shake = this.diarrhea > 0 ? 0.08 : 0
+    this.camera.position.set((Math.random() - 0.5) * shake, this.camY + 2.2 + (Math.random() - 0.5) * shake, dist)
     this.camera.lookAt(0, this.camY, 0)
     this.sun.position.set(4, this.camY + 10, 6)
     this.sun.target.position.set(0, this.camY, 0)
@@ -425,6 +484,10 @@ export class Game {
       belly: this.belly,
       hold: this.phase === 'playing' && !this.input.squeeze ? this.holdTime / HOLD_LIMIT : 0,
       wind: this.wind,
+      combo: this.time - this.lastEat < COMBO_WINDOW ? this.combo : 0,
+      fever: this.fever,
+      chiliWarn: this.chiliWarn,
+      diarrhea: this.diarrhea,
       result: this.result,
     })
   }

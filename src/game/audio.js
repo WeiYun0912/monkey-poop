@@ -99,6 +99,16 @@ export function playFart() {
   vib.stop(t + 0.85)
 }
 
+export function playFever() {
+  ;[523, 659, 784, 1046, 1318].forEach((f, i) => tone('square', f, f * 1.02, 0.12, 0.12, i * 0.06))
+}
+
+// 吃到辣椒：肚子咕嚕咕嚕
+export function playRumble() {
+  tone('sawtooth', 70, 40, 0.8, 0.3)
+  tone('sine', 120, 60, 0.6, 0.2, 0.2)
+}
+
 export function playFail() {
   tone('square', 400, 90, 0.7, 0.15)
 }

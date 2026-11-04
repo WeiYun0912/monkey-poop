@@ -98,6 +98,25 @@ export function createBanana(golden) {
   return g
 }
 
+export function createChili() {
+  const pts = []
+  for (let i = 0; i <= 16; i++) {
+    const t = i / 16
+    pts.push(new THREE.Vector3(Math.sin(t * 1.2) * 0.15, 0.3 - t * 0.6, 0))
+  }
+  const g = new THREE.Group()
+  const body = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 0.09, 10),
+    mat('#e0201b', { roughness: 0.25, emissive: '#550000', emissiveIntensity: 0.4 }),
+  )
+  body.castShadow = true
+  g.add(body)
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.15, 8), mat('#2f8a2f'))
+  stem.position.y = 0.36
+  g.add(stem)
+  return g
+}
+
 export function createScenery(scene) {
   // 桌子 + 盤子
   const table = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.3, 48), mat('#b07a4a'))

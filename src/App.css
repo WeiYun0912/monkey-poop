@@ -67,6 +67,11 @@
   font-weight: 800;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
+.toast.fever {
+  background: linear-gradient(90deg, #ffcc00, #ff7a00);
+  color: #fff;
+  animation: pulse 0.5s infinite;
+}
 .toast.danger {
   background: #e74c3c;
   color: #fff;

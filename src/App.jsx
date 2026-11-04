@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Game, STAR_CM } from './game/engine.js'
+import { Game, STAR_CM, COMBO_FOR_FEVER } from './game/engine.js'
 import './App.css'
 
 export default function App() {
   const canvasRef = useRef(null)
   const gameRef = useRef(null)
-  const [s, setS] = useState({ phase: 'ready', cm: 0, belly: 100, hold: 0, wind: 0, result: null })
+  const [s, setS] = useState({ phase: 'ready', cm: 0, belly: 100, hold: 0, wind: 0, combo: 0, fever: 0, chiliWarn: 0, diarrhea: 0, result: null })
   const [showRules, setShowRules] = useState(true)
   const rulesRef = useRef(true)
   rulesRef.current = showRules
@@ -77,6 +77,10 @@ export default function App() {
         </div>
         {s.wind !== 0 && playing && <div className="toast">{s.wind > 0 ? '💨 → 右風來了！' : '← 💨 左風來了！'}</div>}
         {s.phase === 'dumping' && <div className="toast danger">💥 憋不住了！</div>}
+        {playing && s.combo > 0 && !s.fever && <div className="toast">🍌 連吃 ×{s.combo}（再 {COMBO_FOR_FEVER - s.combo} 根進狂熱）</div>}
+        {playing && s.fever > 0 && <div className="toast fever">🔥 便便狂熱！{s.fever.toFixed(1)}s</div>}
+        {playing && s.chiliWarn > 0 && <div className="toast danger">🌶️ 肚子咕嚕咕嚕…快回盤子上！</div>}
+        {playing && s.diarrhea > 0 && <div className="toast danger">🌶️ 狂噴中！{s.diarrhea.toFixed(1)}s</div>}
       </div>
 
       {playing && (
@@ -94,6 +98,8 @@ export default function App() {
             <li><b>按住</b>（或空白鍵）猴子就開始擠；<b>左右拖曳</b>（或 ← →）讓猴子在樹枝上移動。</li>
             <li>盤子會自己轉，猴子離中心越遠，便便圈就越大。<b>貼近中心但別正中間</b>，拉成小圈才立得住；停在正中間會原地糊成一攤，圈太大又浪費。</li>
             <li>每擠一段都會消耗<b>肚子</b>；樹枝旁會冒出 🍌，移過去就能吃掉補充（金香蕉補更多）。</li>
+            <li><b>連吃 {COMBO_FOR_FEVER} 根香蕉</b>（每根間隔 3.5 秒內）進入 🔥 <b>便便狂熱</b> 5 秒：金色便便、怎麼擠都立得住、肚子不會消耗。</li>
+            <li>小心 🌶️ <b>辣椒</b>（常常躲在香蕉旁邊）！碰到後 0.5 秒會開始<b>強制狂噴 3 秒</b>，又稀又亂、立不住。人在盤外就完蛋，快衝回來！</li>
             <li>放開後只能<b>憋 2 秒</b>，憋不住就會在當下位置噴一坨。去吃香蕉時要抓好時機！</li>
             <li>堆太陡會<b>坍塌</b>往下滾。越高轉得越快，還會<b>颳側風</b>把便便吹歪。</li>
             <li>擠到<b>盤子外面</b>就失敗。</li>
