@@ -1,0 +1,163 @@
+.app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  font-family: 'Noto Sans TC', system-ui, sans-serif;
+  color: #3b2412;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.scene,
+.touch {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.touch {
+  touch-action: none;
+  cursor: grab;
+}
+.hud {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.height {
+  font-size: 44px;
+  font-weight: 900;
+  text-shadow: 0 2px 0 #fff, 0 0 12px #fff;
+}
+.height small {
+  font-size: 20px;
+}
+.meters {
+  display: grid;
+  gap: 4px;
+  width: min(240px, 45%);
+}
+.meter {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+.bar {
+  height: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  transition: width 0.1s;
+}
+.toast {
+  background: #fff;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.toast.danger {
+  background: #e74c3c;
+  color: #fff;
+}
+.hint {
+  position: absolute;
+  bottom: 40px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-weight: 800;
+  font-size: 18px;
+  pointer-events: none;
+  text-shadow: 0 0 8px #fff;
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+.finish {
+  position: absolute;
+  right: 16px;
+  bottom: 24px;
+}
+button {
+  font: inherit;
+  font-weight: 800;
+  font-size: 18px;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 999px;
+  background: #ffcc00;
+  color: #3b2412;
+  box-shadow: 0 4px 0 #b38f00;
+  cursor: pointer;
+}
+button:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #b38f00;
+}
+.panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(460px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  background: rgba(255, 250, 240, 0.96);
+  border-radius: 20px;
+  padding: 20px 22px;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+/* 結算面板放下方，讓玩家看得到自己的塔 */
+.panel.result {
+  top: auto;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(360px, calc(100% - 32px));
+  padding: 12px 18px;
+}
+.panel.result h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.panel.result .big {
+  font-size: 36px;
+}
+.panel.result p {
+  margin: 4px 0 10px;
+}
+.panel h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+}
+.panel ul {
+  text-align: left;
+  padding-left: 18px;
+  line-height: 1.55;
+  font-size: 15px;
+}
+.panel .big {
+  font-size: 48px;
+  font-weight: 900;
+}
+.stars {
+  font-size: 32px;
+}
+.muted {
+  color: #8a6d55;
+}
