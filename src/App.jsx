@@ -77,6 +77,7 @@ export default function App() {
         </div>
         {s.wind !== 0 && playing && <div className="toast">{s.wind > 0 ? '💨 → 右風來了！' : '← 💨 左風來了！'}</div>}
         {s.phase === 'dumping' && <div className="toast danger">💥 憋不住了！</div>}
+        {s.offDish && <div className="toast">🙊 在盤子外面，先憋著！</div>}
         {playing && s.combo > 0 && !s.fever && <div className="toast">🍌 連吃 ×{s.combo}（再 {COMBO_FOR_FEVER - s.combo} 根進狂熱）</div>}
         {playing && s.fever > 0 && <div className="toast fever">🔥 便便狂熱！{s.fever.toFixed(1)}s</div>}
         {playing && s.chiliWarn > 0 && <div className="toast danger">🌶️ 肚子咕嚕咕嚕…要點火了，快回塔上！</div>}
@@ -110,11 +111,11 @@ export default function App() {
             <li>🌶️ <b>辣椒火箭</b>（常常躲在香蕉旁邊）：吃到後 0.5 秒點火，猴子會<b>往上衝</b>，強力噴射 3 秒把塔<b>一口氣往上頂</b>！但點火時人在盤外就完蛋，吃完要立刻衝回塔上。</li>
             <li>
               隨機道具：🧲 <b>磁鐵</b>（6 秒，香蕉自己飛過來）、🍄 <b>巨大菇</b>（5 秒，便便變大）、🛟 <b>救生網</b>（8
-              秒，擠到盤外不算輸）；小心 💣 <b>炸彈</b>，碰到塔頂會被炸掉一截！
+              秒，在盤外也能照擠、噴到盤外不算輸）；小心 💣 <b>炸彈</b>，碰到塔頂會被炸掉一截！
             </li>
-            <li>放開後只能<b>憋 2 秒</b>，憋不住就會在當下位置噴一坨。去吃香蕉時要抓好時機！</li>
+            <li>放開，或猴子移到<b>盤子外面</b>（會自動憋住）時，只能<b>憋 2 秒</b>，憋不住就會在當下位置噴一坨。去盤外吃東西要在 2 秒內回來！</li>
             <li>堆太陡會<b>坍塌</b>往下滾。越高轉得越快，還會<b>颳側風</b>把便便吹歪。</li>
-            <li>擠到<b>盤子外面</b>就失敗（有 🛟 救生網時例外）。</li>
+            <li>憋不住噴出來、或辣椒點火時人在<b>盤子外面</b>就失敗（有 🛟 救生網時例外）。</li>
             <li>覺得夠高就按<b>「收工」</b>結算；肚子擠空也會自動結算。⭐ {STAR_CM.join(' / ')} cm</li>
           </ul>
           <button onClick={() => setShowRules(false)}>開始！</button>

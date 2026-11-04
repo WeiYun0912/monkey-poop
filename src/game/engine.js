@@ -185,6 +185,7 @@ export class Game {
     this.dumpTime = 0
     this.dishAngle = 0
     this.monkeyX = this.input.targetX
+    this.offDish = false
     this.spin = 1.5
     this.top = 0
     for (const b of this.bananas || []) this.scene.remove(b.mesh)
@@ -465,11 +466,13 @@ export class Game {
     if (this.phase === 'playing' && this.rocket > 0) {
       squeezing = this.belly > 0 // 火箭：不管有沒有按都在噴
     } else if (this.phase === 'playing') {
+      // 猴子在盤子外面（含側風偏移）會自動憋住，拖過去吃東西不會直接擠到盤外；有救生網就照擠
+      this.offDish = Math.abs(this.monkeyX + this.wind * 0.35) > DISH_R - 0.25 && this.net <= 0
       // 憋不住機制
-      if (this.input.squeeze && this.belly > 0) {
+      if (this.input.squeeze && this.belly > 0 && !this.offDish) {
         this.holdTime = Math.max(0, this.holdTime - dt * 3)
         squeezing = true
-      } else if (!this.input.squeeze) {
+      } else if (!this.input.squeeze || this.offDish) {
         this.holdTime += dt
         if (this.holdTime >= HOLD_LIMIT) {
           this.phase = 'dumping'
@@ -690,7 +693,8 @@ export class Game {
       phase: this.phase,
       cm: this.top * CM_PER_UNIT,
       belly: this.belly,
-      hold: this.phase === 'playing' && !this.input.squeeze ? this.holdTime / HOLD_LIMIT : 0,
+      hold: this.phase === 'playing' && (!this.input.squeeze || this.offDish) ? this.holdTime / HOLD_LIMIT : 0,
+      offDish: this.phase === 'playing' && this.offDish && this.rocket <= 0,
       wind: this.wind,
       combo: this.time - this.lastEat < COMBO_WINDOW ? this.combo : 0,
       fever: this.fever,
