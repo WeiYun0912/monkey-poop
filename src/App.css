@@ -72,6 +72,12 @@
   color: #fff;
   animation: pulse 0.5s infinite;
 }
+.toast.rocket {
+  background: linear-gradient(90deg, #e0201b, #ff7a00);
+  color: #fff;
+  font-size: 18px;
+  animation: pulse 0.3s infinite;
+}
 .toast.danger {
   background: #e74c3c;
   color: #fff;

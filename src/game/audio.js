@@ -109,6 +109,27 @@ export function playRumble() {
   tone('sine', 120, 60, 0.6, 0.2, 0.2)
 }
 
+// 辣椒火箭點火：轟的一聲往上衝
+export function playRocket() {
+  playFart()
+  const c = ac()
+  const t = c.currentTime
+  const src = c.createBufferSource()
+  src.buffer = noiseBuffer(c)
+  const bp = c.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.Q.value = 1.5
+  bp.frequency.setValueAtTime(300, t)
+  bp.frequency.exponentialRampToValueAtTime(2500, t + 0.6)
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.5, t)
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1.2)
+  src.connect(bp).connect(g).connect(c.destination)
+  src.start(t)
+  src.stop(t + 1.3)
+  tone('sawtooth', 90, 500, 0.6, 0.12)
+}
+
 export function playFail() {
   tone('square', 400, 90, 0.7, 0.15)
 }

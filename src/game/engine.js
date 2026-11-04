@@ -13,8 +13,12 @@ export const COMBO_FOR_FEVER = 4
 const FEVER_TIME = 5
 const CHILI_WARN = 0.5 // 吃到辣椒後幾秒開始狂噴
 const CHILI_TIME = 3
+const ROCKET_H = 3 // 辣椒火箭往上衝多高
+const PARTICLES = 400
 const CM_PER_UNIT = 10
 export const STAR_CM = [20, 40, 70]
+
+const rnd = (k) => (Math.random() - 0.5) * k
 
 export class Game {
   constructor(canvas, onState) {
@@ -81,6 +85,17 @@ export class Game {
     this.windArrow.visible = false
     scene.add(this.windArrow)
 
+    // 辣椒火箭的噴濺粒子
+    this.parts = []
+    this.partMesh = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(1, 8, 6),
+      new THREE.MeshStandardMaterial({ color: '#7a4a22', roughness: 0.4 }),
+      PARTICLES,
+    )
+    this.partMesh.count = 0
+    this.partMesh.frustumCulled = false
+    scene.add(this.partMesh)
+
     this.tmpM = new THREE.Matrix4()
     this.tmpQ = new THREE.Quaternion()
     this.tmpC = new THREE.Color()
@@ -116,7 +131,10 @@ export class Game {
     this.lastEat = -99
     this.fever = 0
     this.chiliWarn = 0
-    this.diarrhea = 0
+    this.rocket = 0
+    this.lift = 0
+    this.parts = []
+    this.partMesh.count = 0
     this.wind = 0
     this.windTimer = 8
     this.windLeft = 0
@@ -207,7 +225,7 @@ export class Game {
     if (this.blobs.length >= MAX_BLOBS) return
     const r = 0.19 + Math.random() * 0.04
     // 世界座標 → 盤子座標（盤子繞 y 軸旋轉）
-    const jitter = this.diarrhea > 0 ? 0.3 : 0.03
+    const jitter = this.rocket > 0 ? 0.08 : 0.03
     const wx = worldX + (Math.random() - 0.5) * jitter + this.wind * 0.35
     const wz = (Math.random() - 0.5) * jitter
     const a = -this.dishAngle
@@ -219,7 +237,7 @@ export class Game {
     const v = this.spin * Math.hypot(lx, lz)
     let repose = THREE.MathUtils.lerp(this.repose[0], this.repose[1], THREE.MathUtils.clamp(v / 0.6, 0, 1))
     if (this.fever > 0) repose = this.repose[1] // 狂熱：怎麼擠都立得住
-    if (this.diarrhea > 0) repose = 0.4 // 拉肚子：稀的立不住
+    if (this.rocket > 0) repose = this.repose[1] * 1.3 // 火箭噴射流又急又硬，直接把塔往上頂
     const step = r * 1.5
     for (let iter = 0; iter < this.rollIters && l.supported; iter++) {
       let best = null
@@ -259,7 +277,7 @@ export class Game {
     this.blobMesh.setMatrixAt(i, this.tmpM)
     const l = 0.24 + Math.random() * 0.07
     if (this.fever > 0) this.tmpC.setHSL(0.13, 0.9, l + 0.25)
-    else if (this.diarrhea > 0) this.tmpC.setHSL(0.11, 0.45, l + 0.12)
+    else if (this.rocket > 0) this.tmpC.setHSL(0.04, 0.6, l + 0.05)
     else this.tmpC.setHSL(0.07, 0.55, l)
     this.blobMesh.setColorAt(i, this.tmpC)
     this.blobMesh.count = i + 1
@@ -317,30 +335,42 @@ export class Game {
     this.monkeyX += (this.input.targetX - this.monkeyX) * Math.min(1, dt * 6)
     const monkeyY = Math.max(this.top + 1.4, 2.0)
     const m = this.monkey
+    this.monkeyBaseY = (this.monkeyBaseY ?? monkeyY) + (monkeyY - (this.monkeyBaseY ?? monkeyY)) * Math.min(1, dt * 3)
+    // 辣椒火箭：前 20% 衝上去、中間懸停、最後 30% 滑回樹枝
+    if (this.rocket > 0) {
+      const t = 1 - this.rocket / CHILI_TIME
+      const up = 1 - Math.pow(1 - Math.min(1, t / 0.2), 3)
+      const down = t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1
+      this.lift = ROCKET_H * up * down
+    } else {
+      this.lift = Math.max(0, this.lift - dt * 4)
+    }
     m.root.position.x = this.monkeyX
-    m.root.position.y += (monkeyY - m.root.position.y) * Math.min(1, dt * 3)
-    m.root.rotation.z = THREE.MathUtils.clamp((this.monkeyX - prevX) * -3, -0.3, 0.3)
-    this.branch.position.set(0, m.root.position.y + 2.0, 0)
+    m.root.position.y = this.monkeyBaseY + this.lift
+    m.root.rotation.z =
+      THREE.MathUtils.clamp((this.monkeyX - prevX) * -3, -0.3, 0.3) + (this.rocket > 0 ? Math.sin(this.time * 40) * 0.12 : 0)
+    this.branch.position.set(0, this.monkeyBaseY + 2.0, 0)
 
     // 狂熱 / 辣椒計時
     const active = this.phase === 'playing' || this.phase === 'dumping'
     if (active) {
       this.fever = Math.max(0, this.fever - dt)
-      this.diarrhea = Math.max(0, this.diarrhea - dt)
+      this.rocket = Math.max(0, this.rocket - dt)
       if (this.chiliWarn > 0) {
         this.chiliWarn -= dt
         if (this.chiliWarn <= 0) {
           this.chiliWarn = 0
-          this.diarrhea = CHILI_TIME
+          this.rocket = CHILI_TIME
           this.holdTime = 0
-          sfx.playFart()
+          sfx.playRocket()
+          this.burst(60)
         }
       }
     }
 
     let squeezing = false
-    if (this.phase === 'playing' && this.diarrhea > 0) {
-      squeezing = this.belly > 0 // 拉肚子：不管有沒有按都在噴
+    if (this.phase === 'playing' && this.rocket > 0) {
+      squeezing = this.belly > 0 // 火箭：不管有沒有按都在噴
     } else if (this.phase === 'playing') {
       // 憋不住機制
       if (this.input.squeeze && this.belly > 0) {
@@ -364,11 +394,12 @@ export class Game {
 
     if (squeezing) {
       this.blobAcc += dt
-      const interval = this.diarrhea > 0 ? BLOB_INTERVAL / 2 : BLOB_INTERVAL
+      const interval = this.rocket > 0 ? BLOB_INTERVAL / 2.5 : BLOB_INTERVAL
       while (this.blobAcc >= interval && this.phase !== 'over') {
         this.blobAcc -= interval
         this.dropBlob(this.monkeyX)
-        if (this.fever <= 0) this.belly = Math.max(0, this.belly - BELLY_PER_BLOB)
+        const cost = this.rocket > 0 ? BELLY_PER_BLOB * 0.5 : BELLY_PER_BLOB
+        if (this.fever <= 0) this.belly = Math.max(0, this.belly - cost)
       }
       if (this.belly <= 0 && this.phase !== 'over') this.end(true, '肚子清空了！')
     }
@@ -390,7 +421,7 @@ export class Game {
     }
     this.windArrow.visible = this.wind !== 0 && this.phase !== 'over'
     if (this.windArrow.visible) {
-      this.windArrow.position.set(-this.wind * 2.2 + Math.sin(this.time * 8) * 0.1, m.root.position.y - 0.5, 0.5)
+      this.windArrow.position.set(-this.wind * 2.2 + Math.sin(this.time * 8) * 0.1, this.monkeyBaseY - 0.5, 0.5)
       this.windArrow.rotation.z = this.wind > 0 ? -Math.PI / 2 : Math.PI / 2
     }
 
@@ -404,7 +435,7 @@ export class Game {
     }
     for (const b of [...this.bananas]) {
       b.life -= dt
-      b.mesh.position.set(b.x, m.root.position.y + 0.9 + Math.sin(this.time * 3 + b.x) * 0.1, 0.2)
+      b.mesh.position.set(b.x, this.monkeyBaseY + 0.9 + Math.sin(this.time * 3 + b.x) * 0.1, 0.2)
       b.mesh.rotation.y += dt * 3
       const s = Math.min(1, b.life * 2, (5 - b.life) * 4)
       b.mesh.scale.setScalar(Math.max(0.01, s) * (b.golden ? 1.3 : 1))
@@ -417,7 +448,7 @@ export class Game {
     }
 
     // 猴子表情 & 擠壓動作
-    const strain = this.chiliWarn > 0 || this.diarrhea > 0 ? 1 : this.holdTime / HOLD_LIMIT
+    const strain = this.chiliWarn > 0 || this.rocket > 0 ? 1 : this.holdTime / HOLD_LIMIT
     const sq = squeezing ? 1 : 0
     m.body.scale.set(1 + sq * 0.04 * Math.sin(this.time * 30), 1 - sq * 0.06, 1)
     m.body.position.x = strain > 0.5 ? Math.sin(this.time * 60) * 0.03 * strain : 0
@@ -429,12 +460,13 @@ export class Game {
     // 便便流
     this.stream.visible = squeezing && this.phase !== 'over'
     if (this.stream.visible) {
-      this.stream.material.color.set(this.fever > 0 ? '#f5c518' : this.diarrhea > 0 ? '#9a6b2f' : '#6b3e1f')
+      this.stream.material.color.set(this.fever > 0 ? '#f5c518' : this.rocket > 0 ? '#8a3c14' : '#6b3e1f')
       const from = m.root.position.y
       const to = (this.lastLandY ?? 0) + 0.1
       const h = Math.max(0.05, from - to)
+      const thick = this.rocket > 0 ? 2 + Math.sin(this.time * 50) * 0.3 : 1
       this.stream.position.set(this.monkeyX + this.wind * 0.17, to + h / 2, 0)
-      this.stream.scale.set(1, h, 1)
+      this.stream.scale.set(thick, h, thick)
       this.stream.rotation.z = this.wind * 0.15
     }
 
@@ -455,18 +487,58 @@ export class Game {
       f.position.set(Math.cos(a) * (0.6 + i * 0.12), this.top + 0.3 + Math.sin(a * 2.3) * 0.25, Math.sin(a) * (0.6 + i * 0.12))
     })
 
-    // 相機跟隨
-    const targetCam = Math.max(1.2, this.top * 0.7 + 0.8)
+    // 火箭噴濺：屁股往下噴、塔頂往上濺
+    if (this.rocket > 0 && this.phase !== 'over') {
+      const bx = this.monkeyX, by = m.root.position.y, ty = this.lastLandY ?? 0
+      for (let i = 0; i < 5; i++) this.spawnPart(bx, by, 0, rnd(1.2), -4 - Math.random() * 3, rnd(1.2))
+      for (let i = 0; i < 4; i++) this.spawnPart(bx, ty + 0.2, 0, rnd(3), 2 + Math.random() * 4, rnd(3))
+    }
+    this.updateParts(dt)
+
+    // 相機跟隨（火箭時往上帶一點）
+    const targetCam = Math.max(1.2, this.top * 0.7 + 0.8) + this.lift * 0.9
     this.camY += (targetCam - this.camY) * Math.min(1, dt * 2)
     const portrait = this.camera.aspect < 1
-    const dist = (portrait ? 11 : 8) + this.top * 0.6
-    const shake = this.diarrhea > 0 ? 0.08 : 0
+    const dist = (portrait ? 11 : 8) + this.top * 0.6 + this.lift * 0.8
+    const shake = this.rocket > 0 ? 0.15 : this.chiliWarn > 0 ? 0.05 : 0
     this.camera.position.set((Math.random() - 0.5) * shake, this.camY + 2.2 + (Math.random() - 0.5) * shake, dist)
     this.camera.lookAt(0, this.camY, 0)
     this.sun.position.set(4, this.camY + 10, 6)
     this.sun.target.position.set(0, this.camY, 0)
 
     if (playing || this.phase === 'dumping') this.emitThrottled(dt)
+  }
+
+  spawnPart(x, y, z, vx, vy, vz) {
+    if (this.parts.length >= PARTICLES) this.parts.shift()
+    this.parts.push({ x, y, z, vx, vy, vz, life: 1, r: 0.05 + Math.random() * 0.07 })
+  }
+
+  burst(n) {
+    const m = this.monkey.root.position
+    for (let i = 0; i < n; i++) this.spawnPart(m.x, m.y, 0, rnd(5), -1 - Math.random() * 5, rnd(5))
+  }
+
+  updateParts(dt) {
+    const floor = -0.1
+    this.parts = this.parts.filter((p) => (p.life -= dt * 0.9) > 0)
+    this.parts.forEach((p, i) => {
+      p.vy -= 12 * dt
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.z += p.vz * dt
+      if (p.y < floor) {
+        p.y = floor
+        p.vy *= -0.3
+        p.vx *= 0.6
+        p.vz *= 0.6
+      }
+      const s = p.r * Math.min(1, p.life * 3)
+      this.tmpM.compose(new THREE.Vector3(p.x, p.y, p.z), this.tmpQ.identity(), new THREE.Vector3(s, s, s))
+      this.partMesh.setMatrixAt(i, this.tmpM)
+    })
+    this.partMesh.count = this.parts.length
+    this.partMesh.instanceMatrix.needsUpdate = true
   }
 
   emitThrottled(dt) {
@@ -487,7 +559,7 @@ export class Game {
       combo: this.time - this.lastEat < COMBO_WINDOW ? this.combo : 0,
       fever: this.fever,
       chiliWarn: this.chiliWarn,
-      diarrhea: this.diarrhea,
+      rocket: this.rocket,
       result: this.result,
     })
   }
