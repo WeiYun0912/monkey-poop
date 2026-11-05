@@ -177,6 +177,78 @@ export function createBomb() {
   return g
 }
 
+export function createBird() {
+  const root = new THREE.Group()
+  const blue = mat('#3d8fd9', { roughness: 0.5 })
+  root.add(ball(0.22, blue, 0, 0, 0, 1.3, 1, 1))
+  root.add(ball(0.15, blue, 0.25, 0.12, 0))
+  root.add(ball(0.12, mat('#f3f0e0'), 0.05, -0.05, 0.12, 1.3, 0.9, 0.6))
+  root.add(ball(0.03, mat('#111111'), 0.33, 0.17, 0.1))
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 8), mat('#ffa21f'))
+  beak.rotation.z = -Math.PI / 2
+  beak.position.set(0.44, 0.1, 0)
+  root.add(beak)
+  const wingGeo = new THREE.SphereGeometry(0.18, 12, 8)
+  const wings = []
+  for (const sz of [-1, 1]) {
+    const pivot = new THREE.Group()
+    pivot.position.set(-0.02, 0.08, sz * 0.15)
+    const w = new THREE.Mesh(wingGeo, mat('#2a6fb0'))
+    w.scale.set(1.3, 0.25, 0.8)
+    w.position.z = sz * 0.15
+    pivot.add(w)
+    root.add(pivot)
+    wings.push({ pivot, sz })
+  }
+  return { root, wings }
+}
+
+// 帽子／配件，掛在猴子頭上（頭部座標，頭頂約 y=0.38）
+export function createHat(kind) {
+  const g = new THREE.Group()
+  if (kind === 'party') {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.45, 20), mat('#ff5fa2', { roughness: 0.4 }))
+    cone.position.y = 0.55
+    g.add(cone)
+    g.add(ball(0.06, mat('#ffe14d'), 0, 0.8, 0))
+  } else if (kind === 'shades') {
+    const lens = mat('#111111', { roughness: 0.1, metalness: 0.5 })
+    for (const sx of [-1, 1]) {
+      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.03, 16), lens)
+      l.rotation.x = Math.PI / 2
+      l.position.set(sx * 0.11, 0.06, 0.42)
+      g.add(l)
+    }
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.02), lens)
+    bridge.position.set(0, 0.08, 0.43)
+    g.add(bridge)
+  } else if (kind === 'crown') {
+    const gold = mat('#ffcc00', { metalness: 0.8, roughness: 0.25 })
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 20, 1, true), gold)
+    band.position.y = 0.4
+    g.add(band)
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 6), gold)
+      spike.position.set(Math.cos(a) * 0.19, 0.52, Math.sin(a) * 0.19)
+      g.add(spike)
+    }
+    g.add(ball(0.04, mat('#e0302a', { roughness: 0.2 }), 0, 0.42, 0.21))
+  } else if (kind === 'straw') {
+    const straw = mat('#e8c46a', { roughness: 0.9 })
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.03, 28), straw)
+    brim.position.y = 0.33
+    g.add(brim)
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.18, 24), straw)
+    top.position.y = 0.43
+    g.add(top)
+    const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.265, 0.265, 0.05, 24), mat('#d22b2b'))
+    ribbon.position.y = 0.37
+    g.add(ribbon)
+  }
+  return g
+}
+
 export function createScenery(scene) {
   // 桌子 + 盤子
   const table = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.3, 48), mat('#b07a4a'))

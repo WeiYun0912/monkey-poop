@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { Game, STAR_CM, COMBO_FOR_FEVER } from './game/engine.js'
+import { Game, COMBO_FOR_FEVER } from './game/engine.js'
+import { setMuted } from './game/audio.js'
+import { loadProgress, saveProgress, recordRun } from './progress.js'
+import { MISSIONS } from './missions.js'
+import { Home, Rules, Missions, Skins } from './ui/Menus.jsx'
+import { ShareCard } from './ui/ShareCard.jsx'
 import './App.css'
 
 export default function App() {
   const canvasRef = useRef(null)
   const gameRef = useRef(null)
-  const [s, setS] = useState({ phase: 'ready', cm: 0, belly: 100, hold: 0, wind: 0, combo: 0, fever: 0, chiliWarn: 0, rocket: 0, magnet: 0, mushroom: 0, net: 0, boom: 0, result: null })
-  const [showRules, setShowRules] = useState(true)
-  const rulesRef = useRef(true)
-  rulesRef.current = showRules
+  const [s, setS] = useState({ phase: 'ready', cm: 0, belly: 100, hold: 0, wind: 0, combo: 0, fever: 0, chiliWarn: 0, rocket: 0, magnet: 0, mushroom: 0, net: 0, boom: 0, birdPeck: 0, peckMsg: 0, stats: null, mission: null, result: null })
+  const [progress, setProgress] = useState(loadProgress)
+  const [screen, setScreen] = useState('home') // home | rules | missions | skins | null（遊戲中）
+  const [runInfo, setRunInfo] = useState(null) // 結算時拿到幾顆星、是否破紀錄
+  const [shot, setShot] = useState(null) // 分享卡用的截圖
+  const screenRef = useRef(screen)
+  screenRef.current = screen
 
   useEffect(() => {
     const game = new Game(canvasRef.current, setS)
@@ -18,7 +26,7 @@ export default function App() {
     const down = (e) => {
       if (e.code === 'Space') {
         e.preventDefault()
-        if (!rulesRef.current) game.setSqueeze(true)
+        if (!screenRef.current) game.setSqueeze(true)
       }
       keys[e.code] = true
     }
@@ -43,12 +51,39 @@ export default function App() {
     }
   }, [])
 
+  // 進度變動：存檔、套用造型與靜音
+  useEffect(() => {
+    saveProgress(progress)
+    gameRef.current?.setSkin(progress.hat, progress.poop)
+    setMuted(progress.muted)
+  }, [progress])
+
+  // 一局結束時記錄一次成績
+  const recorded = useRef(null)
+  useEffect(() => {
+    const r = s.result
+    if (!r || recorded.current === r) return
+    recorded.current = r
+    setProgress((p) => {
+      const { progress: next, gained, newBest } = recordRun(p, r, r.missionId)
+      setRunInfo({ gained, newBest, best: next.best })
+      return next
+    })
+  }, [s.result])
+
+  const start = (mission = null) => {
+    setRunInfo(null)
+    setShot(null)
+    gameRef.current.start(mission)
+    setScreen(null)
+  }
+
   const pointerX = (e) => {
     const rect = e.currentTarget.getBoundingClientRect()
     gameRef.current.setPointerX(((e.clientX - rect.left) / rect.width) * 2 - 1)
   }
   const onDown = (e) => {
-    if (showRules) return
+    if (screen) return
     e.currentTarget.setPointerCapture(e.pointerId)
     pointerX(e)
     gameRef.current.setSqueeze(true)
@@ -56,7 +91,9 @@ export default function App() {
   const onUp = () => gameRef.current?.setSqueeze(false)
 
   const r = s.result
+  const m = s.mission
   const playing = s.phase === 'playing' || s.phase === 'dumping'
+  const nextMission = m && MISSIONS.find((x) => x.id === m.id + 1)
 
   return (
     <div className="app">
@@ -67,74 +104,122 @@ export default function App() {
         onPointerMove={pointerX}
         onPointerUp={onUp}
         onPointerCancel={onUp}
+        onContextMenu={(e) => e.preventDefault()}
       />
 
-      <div className="hud">
-        <div className="height">{s.cm.toFixed(1)} <small>cm</small></div>
-        <div className="meters">
-          <Meter label="🍌 肚子" value={s.belly / 100} color={s.belly < 25 ? '#e74c3c' : '#c98b2b'} />
-          <Meter label="😣 憋氣" value={s.hold} color="#e74c3c" />
-        </div>
-        {s.wind !== 0 && playing && <div className="toast">{s.wind > 0 ? '💨 → 右風來了！' : '← 💨 左風來了！'}</div>}
-        {s.phase === 'dumping' && <div className="toast danger">💥 憋不住了！</div>}
-        {s.offDish && <div className="toast">🙊 在盤子外面，先憋著！</div>}
-        {playing && s.combo > 0 && !s.fever && <div className="toast">🍌 連吃 ×{s.combo}（再 {COMBO_FOR_FEVER - s.combo} 根進狂熱）</div>}
-        {playing && s.fever > 0 && <div className="toast fever">🔥 便便狂熱！{s.fever.toFixed(1)}s</div>}
-        {playing && s.chiliWarn > 0 && <div className="toast danger">🌶️ 肚子咕嚕咕嚕…要點火了，快回塔上！</div>}
-        {playing && s.rocket > 0 && <div className="toast rocket">🚀 辣椒火箭！{s.rocket.toFixed(1)}s</div>}
-        {playing && s.boom > 0 && <div className="toast danger">💣 轟！塔頂被炸掉一截</div>}
-        {playing && (s.magnet > 0 || s.mushroom > 0 || s.net > 0) && (
-          <div className="buffs">
-            {s.magnet > 0 && <span>🧲 {s.magnet.toFixed(1)}</span>}
-            {s.mushroom > 0 && <span>🍄 {s.mushroom.toFixed(1)}</span>}
-            {s.net > 0 && <span>🛟 {s.net.toFixed(1)}</span>}
-          </div>
-        )}
-      </div>
+      <button
+        className="icon-btn mute"
+        aria-label={progress.muted ? '開啟聲音' : '靜音'}
+        onClick={() => setProgress((p) => ({ ...p, muted: !p.muted }))}
+      >
+        {progress.muted ? '🔇' : '🔊'}
+      </button>
 
-      {playing && (
+      {!screen && (
+        <div className="hud">
+          <div className="height">
+            {s.cm.toFixed(1)} <small>cm</small>
+          </div>
+          {m && <MissionBar m={m} st={s.stats} cm={s.cm} />}
+          <div className="meters">
+            <Meter label="🍌 肚子" value={s.belly / 100} color={s.belly < 25 ? '#e74c3c' : '#c98b2b'} />
+            <Meter label="😣 憋氣" value={s.hold} color="#e74c3c" />
+          </div>
+          {s.wind !== 0 && playing && <div className="toast">{s.wind > 0 ? '💨 → 右風來了！' : '← 💨 左風來了！'}</div>}
+          {s.phase === 'dumping' && <div className="toast danger">💥 憋不住了！</div>}
+          {s.offDish && <div className="toast">🙊 在盤子外面，先憋著！</div>}
+          {playing && s.birdPeck > 0 && (
+            <div className="toast danger">🐦 鳥在啄塔頂！移到牠上面擠便便砸牠 {s.birdPeck.toFixed(1)}s</div>
+          )}
+          {playing && s.peckMsg > 0 && <div className="toast danger">🐦 塔頂被啄掉一截！</div>}
+          {playing && s.combo > 0 && !s.fever && (
+            <div className="toast">🍌 連吃 ×{s.combo}（再 {COMBO_FOR_FEVER - s.combo} 根進狂熱）</div>
+          )}
+          {playing && s.fever > 0 && <div className="toast fever">🔥 便便狂熱！{s.fever.toFixed(1)}s</div>}
+          {playing && s.chiliWarn > 0 && <div className="toast danger">🌶️ 肚子咕嚕咕嚕…要點火了，快回塔上！</div>}
+          {playing && s.rocket > 0 && <div className="toast rocket">🚀 辣椒火箭！{s.rocket.toFixed(1)}s</div>}
+          {playing && s.boom > 0 && <div className="toast danger">💣 轟！塔頂被炸掉一截</div>}
+          {playing && (s.magnet > 0 || s.mushroom > 0 || s.net > 0) && (
+            <div className="buffs">
+              {s.magnet > 0 && <span>🧲 {s.magnet.toFixed(1)}</span>}
+              {s.mushroom > 0 && <span>🍄 {s.mushroom.toFixed(1)}</span>}
+              {s.net > 0 && <span>🛟 {s.net.toFixed(1)}</span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {playing && !screen && (
         <button className="finish" onClick={() => gameRef.current.finish()}>
-          收工 ✋
+          {m ? '放棄' : '收工 ✋'}
         </button>
       )}
 
-      {s.phase === 'ready' && !showRules && <div className="hint">按住開始擠 · 左右移動猴子</div>}
-
-      {showRules && (
-        <div className="panel">
-          <h1>🐒 猴子擠便便塔</h1>
-          <ul>
-            <li><b>按住</b>（或空白鍵）猴子就開始擠；<b>左右拖曳</b>（或 ← →）讓猴子在樹枝上移動。</li>
-            <li>盤子會自己轉，猴子離中心越遠，便便圈就越大。<b>貼近中心但別正中間</b>，拉成小圈才立得住；停在正中間會原地糊成一攤，圈太大又浪費。</li>
-            <li>每擠一段都會消耗<b>肚子</b>；樹枝旁會冒出 🍌，移過去就能吃掉補充（金香蕉補更多）。</li>
-            <li><b>連吃 {COMBO_FOR_FEVER} 根香蕉</b>（每根間隔 3.5 秒內）進入 🔥 <b>便便狂熱</b> 5 秒：金色便便、怎麼擠都立得住、肚子不會消耗。</li>
-            <li>🌶️ <b>辣椒火箭</b>（常常躲在香蕉旁邊）：吃到後 0.5 秒點火，猴子會<b>往上衝</b>，強力噴射 3 秒把塔<b>一口氣往上頂</b>！但點火時人在盤外就完蛋，吃完要立刻衝回塔上。</li>
-            <li>
-              隨機道具：🧲 <b>磁鐵</b>（6 秒，香蕉自己飛過來）、🍄 <b>巨大菇</b>（5 秒，便便變大）、🛟 <b>救生網</b>（8
-              秒，在盤外也能照擠、噴到盤外不算輸）；小心 💣 <b>炸彈</b>，碰到塔頂會被炸掉一截！
-            </li>
-            <li>放開，或猴子移到<b>盤子外面</b>（會自動憋住）時，只能<b>憋 2 秒</b>，憋不住就會在當下位置噴一坨。去盤外吃東西要在 2 秒內回來！</li>
-            <li>堆太陡會<b>坍塌</b>往下滾。越高轉得越快，還會<b>颳側風</b>把便便吹歪。</li>
-            <li>憋不住噴出來、或辣椒點火時人在<b>盤子外面</b>就失敗（有 🛟 救生網時例外）。</li>
-            <li>覺得夠高就按<b>「收工」</b>結算；肚子擠空也會自動結算。⭐ {STAR_CM.join(' / ')} cm</li>
-          </ul>
-          <button onClick={() => setShowRules(false)}>開始！</button>
-        </div>
+      {s.phase === 'ready' && !screen && (
+        <div className="hint">{m ? `🎯 ${m.desc}｜` : ''}按住開始擠 · 左右移動猴子</div>
       )}
 
-      {s.phase === 'over' && r && (
+      {screen === 'home' && (
+        <Home
+          progress={progress}
+          onFree={() => start(null)}
+          onMissions={() => setScreen('missions')}
+          onSkins={() => setScreen('skins')}
+          onRules={() => setScreen('rules')}
+        />
+      )}
+      {screen === 'rules' && <Rules onBack={() => setScreen('home')} />}
+      {screen === 'missions' && <Missions progress={progress} onPick={(mi) => start(mi)} onBack={() => setScreen('home')} />}
+      {screen === 'skins' && <Skins progress={progress} onChange={setProgress} onBack={() => setScreen('home')} />}
+
+      {!screen && s.phase === 'over' && r && !shot && (
         <div className="panel result">
           <h2>{r.success ? r.reason : `💩 ${r.reason}`}</h2>
+          {m && <p className="muted">🎯 {m.title}：{m.desc}</p>}
           <div className="big">{r.cm.toFixed(1)} cm</div>
-          {r.success ? (
-            <div className="stars">{'⭐'.repeat(r.stars)}{'☆'.repeat(3 - r.stars)}</div>
-          ) : (
-            <p className="muted">失敗不計入紀錄</p>
+          {!m && r.success && (
+            <div className="stars">
+              {'⭐'.repeat(r.stars)}
+              {'☆'.repeat(3 - r.stars)}
+            </div>
           )}
-          <p>{r.newBest ? '🎉 刷新個人最佳！' : `個人最佳 ${r.best ? r.best.toFixed(1) + ' cm' : '—'}`}</p>
-          <button onClick={() => gameRef.current.reset()}>再擠一次</button>
+          {!m && !r.success && <p className="muted">失敗不計入紀錄</p>}
+          {runInfo && (
+            <p>
+              {runInfo.gained > 0 && <b className="gain">+{runInfo.gained} ⭐</b>}
+              {!m && (runInfo.newBest ? '🎉 刷新個人最佳！' : `個人最佳 ${runInfo.best ? runInfo.best.toFixed(1) + ' cm' : '—'}`)}
+            </p>
+          )}
+          <div className="row-btns">
+            {m && r.success && nextMission ? (
+              <button onClick={() => start(nextMission)}>下一關 ▶</button>
+            ) : (
+              <button onClick={() => start(m)}>{m ? '再挑戰' : '再擠一次'}</button>
+            )}
+            <button className="ghost" onClick={() => setShot(gameRef.current.snapshot())}>
+              📸 分享
+            </button>
+            <button className="ghost" onClick={() => setScreen('home')}>
+              主選單
+            </button>
+          </div>
         </div>
       )}
+
+      {shot && r && <ShareCard shot={shot} result={r} mission={m} onClose={() => setShot(null)} />}
+    </div>
+  )
+}
+
+function MissionBar({ m, st, cm }) {
+  if (!st) return null
+  return (
+    <div className="mission">
+      <span>🎯 {Math.min(cm, m.goalCm).toFixed(0)}/{m.goalCm} cm</span>
+      {m.timeLimit && <span>⏱ {Math.max(0, m.timeLimit - st.playTime).toFixed(0)}s</span>}
+      {m.birds && <span>🐦 {st.birds}/{m.birds}</span>}
+      {m.rockets && <span>🚀 {st.rockets}/{m.rockets}</span>}
+      {m.noBanana && <span>🚫🍌</span>}
     </div>
   )
 }

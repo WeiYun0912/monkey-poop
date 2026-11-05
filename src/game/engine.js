@@ -7,11 +7,14 @@ import {
   createMushroom,
   createLifebuoy,
   createBomb,
+  createBird,
+  createHat,
   createScenery,
   createDish,
 } from './models.js'
 import * as sfx from './audio.js'
 import { FxPool } from './fx.js'
+import { POOPS } from '../skins.js'
 
 const DISH_R = 1.7
 const MAX_BLOBS = 5000
@@ -30,6 +33,8 @@ const MAGNET_TIME = 6
 const MUSHROOM_TIME = 5
 const NET_TIME = 8
 const BOMB_CUT = 1.2 // 炸彈炸掉塔頂多高
+const BIRD_PECK = 3 // 鳥停在塔頂幾秒後啄掉一截
+const BIRD_CUT = 0.8
 const isFood = (k) => k === 'banana' || k === 'golden'
 // 道具出現權重：[種類, 權重, 塔至少要多高才出現]
 const ITEM_TABLE = [
@@ -159,6 +164,12 @@ export class Game {
     this.netMesh.visible = false
     scene.add(this.netMesh)
 
+    this.bird = createBird()
+    this.bird.root.visible = false
+    scene.add(this.bird.root)
+    this.hatMesh = null
+    this.poopSkin = POOPS[0]
+
     this.tmpM = new THREE.Matrix4()
     this.tmpQ = new THREE.Quaternion()
     this.tmpC = new THREE.Color()
@@ -205,6 +216,10 @@ export class Game {
     this.mushroom = 0
     this.net = 0
     this.boom = 0
+    this.birdState = null // { phase: 'fly'|'peck'|'flee', x, t, from }
+    this.birdTimer = 10
+    this.peckMsg = 0
+    this.stats = { rockets: 0, birds: 0, bananas: 0, playTime: 0 }
     this.wind = 0
     this.windTimer = 8
     this.windLeft = 0
@@ -215,6 +230,25 @@ export class Game {
     this.stack.position.set(0, 0, 0)
     this.camY = 1.2
     this.emit(true)
+  }
+
+  // 開一局：mission 為 null 是自由模式
+  start(mission = null) {
+    this.mission = mission
+    this.reset()
+  }
+
+  setSkin(hatId, poopId) {
+    if (this.hatMesh) this.monkey.head.remove(this.hatMesh)
+    this.hatMesh = hatId && hatId !== 'none' ? createHat(hatId) : null
+    if (this.hatMesh) this.monkey.head.add(this.hatMesh)
+    this.poopSkin = POOPS.find((p) => p.id === poopId) || POOPS[0]
+  }
+
+  // 結算分享卡用：當下重畫一張再截圖（WebGL 畫布沒保留 buffer）
+  snapshot() {
+    this.renderer.render(this.scene, this.camera)
+    return this.renderer.domElement.toDataURL('image/jpeg', 0.9)
   }
 
   setPointerX(nx) {
@@ -236,29 +270,31 @@ export class Game {
 
   finish() {
     if (this.phase !== 'playing') return
-    this.end(true, '收工！')
+    // 任務模式提早收工 = 沒達成
+    if (this.mission) this.end(false, '任務未完成')
+    else this.end(true, '收工！')
   }
 
+  // 任務：檢查過關 / 失敗條件
+  checkMission() {
+    const m = this.mission
+    if (!m || this.phase === 'over') return
+    const st = this.stats
+    if (m.noBanana && st.bananas > 0) return this.end(false, '吃到香蕉了！')
+    if (m.timeLimit && st.playTime > m.timeLimit) return this.end(false, '時間到！')
+    const done = this.top * CM_PER_UNIT >= m.goalCm && st.rockets >= (m.rockets || 0) && st.birds >= (m.birds || 0)
+    if (done) this.end(true, '任務完成！')
+  }
+
+  // 成績與進度存檔交給 UI（progress.js），這裡只回報本局結果
   end(success, reason) {
+    if (!success && this.mission && reason === '肚子清空了！') reason = '肚子空了，任務失敗'
     this.phase = 'over'
     sfx.setSqueezing(false)
+    sfx.setBgmIntensity(0)
     const cm = this.top * CM_PER_UNIT
-    const stars = success ? STAR_CM.filter((t) => cm >= t).length : 0
-    let best = 0
-    try {
-      best = Number(localStorage.getItem('monkey-poop-best') || 0)
-    } catch {
-      /* 無痕模式等情況讀不到就算了 */
-    }
-    const newBest = success && cm > best
-    if (newBest) {
-      try {
-        localStorage.setItem('monkey-poop-best', cm.toFixed(1))
-      } catch {
-        /* 寫不進去就不記錄 */
-      }
-    }
-    this.result = { success, reason, cm, stars, best: newBest ? cm : best, newBest }
+    const stars = success && !this.mission ? STAR_CM.filter((t) => cm >= t).length : 0
+    this.result = { success, reason, cm, stars, missionId: this.mission?.id ?? null }
     if (success) sfx.playWin(stars)
     else {
       sfx.playFail()
@@ -355,7 +391,7 @@ export class Game {
       const l = 0.24 + Math.random() * 0.07
       if (this.fever > 0) b.col = [0.13, 0.9, l + 0.25]
       else if (this.rocket > 0) b.col = [0.04, 0.6, l + 0.05]
-      else b.col = [0.07, 0.55, l]
+      else b.col = this.poopSkin.col(l, b.y)
     }
     this.tmpC.setHSL(...b.col)
     this.blobMesh.setColorAt(i, this.tmpC)
@@ -366,7 +402,8 @@ export class Game {
 
   spawnItem() {
     // 依權重抽道具；辣椒、救生網、炸彈要塔有一點高度才會出現
-    const table = ITEM_TABLE.filter(([, , minTop]) => this.top >= minTop)
+    // 「不吃香蕉」任務不出磁鐵（會把香蕉吸過來，等於強制失敗）
+    const table = ITEM_TABLE.filter(([k, , minTop]) => this.top >= minTop && !(k === 'magnet' && this.mission?.noBanana))
     let roll = Math.random() * table.reduce((s, [, w]) => s + w, 0)
     const kind = table.find(([, w]) => (roll -= w) < 0)[0]
     const mesh = ITEM_MESH[kind]()
@@ -404,6 +441,7 @@ export class Game {
       return
     }
     this.belly = Math.min(100, this.belly + (b.golden ? 20 : 8))
+    this.stats.bananas++
     sfx.playBanana(b.golden)
     this.combo = this.time - this.lastEat < COMBO_WINDOW ? this.combo + 1 : 1
     this.lastEat = this.time
@@ -445,6 +483,9 @@ export class Game {
     // 狂熱 / 辣椒計時
     const active = this.phase === 'playing' || this.phase === 'dumping'
     if (active) {
+      this.stats.playTime += dt
+      this.checkMission()
+      sfx.setBgmIntensity(this.fever > 0 || this.rocket > 0 ? 1 : 0)
       this.fever = Math.max(0, this.fever - dt)
       this.rocket = Math.max(0, this.rocket - dt)
       this.magnet = Math.max(0, this.magnet - dt)
@@ -457,6 +498,7 @@ export class Game {
           this.rocket = CHILI_TIME
           this.holdTime = 0
           sfx.playRocket()
+          this.stats.rockets++
           this.burst(60)
         }
       }
@@ -497,7 +539,8 @@ export class Game {
         const cost = this.rocket > 0 ? BELLY_PER_BLOB * 0.5 : BELLY_PER_BLOB
         if (this.fever <= 0) this.belly = Math.max(0, this.belly - cost)
       }
-      if (this.belly <= 0 && this.phase !== 'over') this.end(true, '肚子清空了！')
+      this.checkMission()
+      if (this.belly <= 0 && this.phase !== 'over') this.end(!this.mission, '肚子清空了！')
     }
     sfx.setSqueezing(squeezing && this.phase !== 'over')
 
@@ -544,6 +587,8 @@ export class Game {
         this.bananas.splice(this.bananas.indexOf(b), 1)
       }
     }
+
+    this.updateBird(dt, squeezing)
 
     // 猴子表情 & 擠壓動作
     const strain = this.chiliWarn > 0 || this.rocket > 0 ? 1 : this.holdTime / HOLD_LIMIT
@@ -642,15 +687,90 @@ export class Game {
     }
   }
 
-  // 炸彈：塔頂炸掉一截
-  explode() {
+  // 塔頂削掉一截（炸彈、鳥共用），回傳原本的高度
+  cutTop(amount) {
     const oldTop = this.top
-    const cut = Math.max(0, oldTop - BOMB_CUT)
+    const cut = Math.max(0, oldTop - amount)
     this.blobs = this.blobs.filter((b) => b.y < cut)
     this.blobs.forEach((b, i) => this.addBlobInstance(b, i))
     this.blobMesh.count = this.blobs.length
     this.top = this.blobs.reduce((t, b) => Math.max(t, b.y + b.r * 0.8), 0)
     this.lastLandY = this.top
+    return oldTop
+  }
+
+  // 鳥：飛來停在塔頂啄，猴子移到牠正上方擠便便砸牠就會飛走；拖太久就啄掉一截
+  updateBird(dt, squeezing) {
+    const bd = this.bird
+    const st = this.birdState
+    this.peckMsg = Math.max(0, this.peckMsg - dt)
+    if (!st) {
+      bd.root.visible = false
+      if (this.phase === 'playing' && this.top > 1.5 && this.rocket <= 0) {
+        this.birdTimer -= dt
+        if (this.birdTimer <= 0) {
+          const side = Math.random() < 0.5 ? -1 : 1
+          this.birdState = { phase: 'fly', x: side * (0.45 + Math.random() * 0.6), from: side * 5, t: 0 }
+          this.birdTimer = 10 + Math.random() * 6
+          sfx.playTweet()
+        }
+      }
+      return
+    }
+    st.t += dt
+    bd.root.visible = true
+    const perchY = this.top + 0.15
+    let x, y, face
+    if (st.phase === 'fly') {
+      const k = Math.min(1, st.t / 1.5)
+      const e = 1 - (1 - k) * (1 - k)
+      x = st.from + (st.x - st.from) * e
+      y = perchY + 2 * (1 - e)
+      face = Math.sign(st.x - st.from)
+      if (k >= 1) {
+        st.phase = 'peck'
+        st.t = 0
+      }
+    } else if (st.phase === 'peck') {
+      x = st.x
+      y = perchY + Math.abs(Math.sin(st.t * 12)) * 0.08
+      face = -Math.sign(st.x)
+      const dropX = this.monkeyX + this.wind * 0.35
+      if (squeezing && this.phase !== 'over' && Math.abs(dropX - st.x) < 0.4) {
+        // 被便便砸中
+        st.phase = 'flee'
+        st.t = 0
+        this.stats.birds++
+        sfx.playSquawk()
+        for (let i = 0; i < 20; i++) this.spawnPart(st.x, perchY, 0.3, rnd(4), 1 + Math.random() * 3, rnd(4))
+      } else if (st.t >= BIRD_PECK && this.phase !== 'over') {
+        this.cutTop(BIRD_CUT)
+        for (let i = 0; i < 25; i++) this.spawnPart(st.x * 0.5, perchY - 0.3, 0, rnd(4), 1 + Math.random() * 3, rnd(4))
+        this.peckMsg = 1.5
+        st.phase = 'flee'
+        st.t = 0
+        sfx.playTweet()
+      }
+    } else {
+      const dir = Math.sign(st.x) || 1
+      x = st.x + dir * st.t * 6
+      y = perchY + st.t * 4
+      face = dir
+      if (st.t > 1.2) {
+        this.birdState = null
+        bd.root.visible = false
+        return
+      }
+    }
+    bd.root.position.set(x, y, 0.3)
+    bd.root.rotation.y = face > 0 ? 0 : Math.PI
+    const flap = st.phase === 'peck' ? Math.sin(this.time * 8) * 0.2 : Math.sin(this.time * 30) * 0.9
+    for (const w of bd.wings) w.pivot.rotation.x = w.sz * flap
+  }
+
+  // 炸彈：塔頂炸掉一截
+  explode() {
+    const oldTop = this.cutTop(BOMB_CUT)
     for (let i = 0; i < 60; i++) this.spawnPart(rnd(0.6), oldTop - 0.5, rnd(0.6), rnd(8), 1 + Math.random() * 6, rnd(8))
     for (let i = 0; i < 50; i++) this.flame.spawn(rnd(0.5), oldTop - 0.5, rnd(0.5), rnd(7), rnd(7), rnd(7), 0.3 + Math.random() * 0.3, 0.2 + Math.random() * 0.2)
     for (let i = 0; i < 25; i++) this.smoke.spawn(rnd(0.8), oldTop - 0.5, rnd(0.8), rnd(3), Math.random() * 2, rnd(3), 1.5, 0.2)
@@ -695,6 +815,10 @@ export class Game {
       belly: this.belly,
       hold: this.phase === 'playing' && (!this.input.squeeze || this.offDish) ? this.holdTime / HOLD_LIMIT : 0,
       offDish: this.phase === 'playing' && this.offDish && this.rocket <= 0,
+      birdPeck: this.birdState?.phase === 'peck' ? BIRD_PECK - this.birdState.t : 0,
+      peckMsg: this.peckMsg,
+      stats: { ...this.stats },
+      mission: this.mission || null,
       wind: this.wind,
       combo: this.time - this.lastEat < COMBO_WINDOW ? this.combo : 0,
       fever: this.fever,

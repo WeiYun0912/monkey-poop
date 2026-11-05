@@ -41,6 +41,10 @@
   display: grid;
   gap: 4px;
   width: min(240px, 45%);
+  /* 底下常常是樹枝，墊一層白底才看得清楚 */
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.65);
 }
 .meter {
   display: grid;
@@ -183,4 +187,200 @@ button:active {
 }
 .muted {
   color: #8a6d55;
+}
+
+.gain {
+  margin-right: 8px;
+}
+
+/* ── 選單、任務、造型 ── */
+button,
+.btn {
+  touch-action: manipulation;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button.ghost {
+  background: #fff;
+  box-shadow: 0 4px 0 #d9c9b4;
+}
+.btn {
+  display: inline-block;
+  font-weight: 800;
+  font-size: 18px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  background: #ffcc00;
+  color: #3b2412;
+  box-shadow: 0 4px 0 #b38f00;
+  text-decoration: none;
+}
+.row-btns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.row-btns button,
+.row-btns .btn {
+  font-size: 16px;
+  padding: 8px 16px;
+}
+.menu {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.menu small {
+  font-size: 13px;
+  opacity: 0.7;
+}
+.list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+.row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  font-size: 15px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 3px 0 #d9c9b4;
+}
+.row.done {
+  background: #eaf7e4;
+}
+.row .num {
+  font-size: 20px;
+  text-align: center;
+}
+.row .txt {
+  display: grid;
+}
+.row .txt small {
+  font-weight: 500;
+  color: #8a6d55;
+}
+.row .reward {
+  font-size: 13px;
+}
+.panel h3 {
+  margin: 14px 0 6px;
+  font-size: 16px;
+}
+.skins {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.skin {
+  display: grid;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 3px 0 #d9c9b4;
+  font-size: 13px;
+  border: 3px solid transparent;
+}
+.skin.on {
+  border-color: #ffb300;
+  background: #fff6d1;
+}
+.skin .ico {
+  font-size: 26px;
+}
+.mission {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mission span {
+  background: #3b2412;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 14px;
+}
+.icon-btn {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 22px;
+  background: #fff;
+  box-shadow: 0 3px 0 #d9c9b4;
+  z-index: 2;
+}
+.panel.share {
+  z-index: 3;
+  width: min(380px, calc(100% - 32px));
+}
+.panel.share img {
+  width: 100%;
+  border-radius: 14px;
+  margin-bottom: 12px;
+}
+
+/* ── 手機直式／小螢幕 ── */
+@media (max-width: 600px) {
+  .hud {
+    top: calc(8px + env(safe-area-inset-top));
+    left: 12px;
+    right: 68px;
+    gap: 6px;
+  }
+  .height {
+    font-size: 34px;
+  }
+  .meters {
+    width: min(220px, 70%);
+  }
+  .toast {
+    font-size: 13px;
+    padding: 5px 12px;
+  }
+  .toast.rocket {
+    font-size: 15px;
+  }
+  .mission span,
+  .buffs span {
+    font-size: 12px;
+  }
+  /* 收工鍵放大，貼在拇指好按的右下角 */
+  .finish {
+    right: 12px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    padding: 14px 22px;
+    font-size: 18px;
+  }
+  .hint {
+    bottom: calc(90px + env(safe-area-inset-bottom));
+    font-size: 16px;
+    padding: 0 16px;
+  }
+  .panel {
+    width: calc(100% - 24px);
+    padding: 16px;
+  }
+  .panel ul {
+    font-size: 14px;
+  }
+  .panel.result {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  .skin .ico {
+    font-size: 22px;
+  }
 }
